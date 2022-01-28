@@ -1,15 +1,41 @@
-FROM balenalib/raspberrypi4-64-debian:buster
+FROM balenalib/aarch64-debian:bullseye-run
+LABEL io.balena.device-type="raspberrypi4-64"
+RUN echo "deb http://archive.raspberrypi.org/debian bullseye main ui" >>  /etc/apt/sources.list.d/raspi.list \
+	&& apt-key adv --batch --keyserver keyserver.ubuntu.com  --recv-key 0x82B129927FA3303E
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+		less \
+		libraspberrypi-bin \
+		kmod \
+		nano \
+		net-tools \
+		ifupdown \
+		iputils-ping \
+		i2c-tools \
+		usbutils \
+	&& rm -rf /var/lib/apt/lists/*
+
+RUN [ ! -d /.balena/messages ] && mkdir -p /.balena/messages; echo 'Here are a few details about this Docker image (For more information please visit https://www.balena.io/docs/reference/base-images/base-images/): \nArchitecture: ARM v8 \nOS: Debian Bullseye \nVariant: run variant \nDefault variable(s): UDEV=off \nExtra features: \n- Easy way to install packages with `install_packages <package-name>` command \n- Run anywhere with cross-build feature  (for ARM only) \n- Keep the container idling with `balena-idle` command \n- Show base image details with `balena-info` command' > /.balena/messages/image-info
+
+RUN echo '#!/bin/sh.real\nbalena-info\nrm -f /bin/sh\ncp /bin/sh.real /bin/sh\n/bin/sh "$@"' > /bin/sh-shim \
+	&& chmod +x /bin/sh-shim \
+	&& cp /bin/sh /bin/sh.real \
+	&& mv /bin/sh-shim /bin/sh
 
 ENV UDEV=on
 
-# RUN apt-get update && apt-get install -y curl wget build-essential libelf-dev awscli bc flex libssl-dev python bison gcc
-
-RUN install_packages curl wget build-essential libelf-dev awscli bc flex libssl-dev python bison
+RUN install_packages curl wget build-essential libelf-dev awscli bc flex libssl-dev python bison dnsmasq wireless-tools
 
 # install gcc 10
 RUN echo 'deb http://deb.debian.org/debian testing main' >> /etc/apt/sources.list
+
 RUN apt update -y
-RUN install_packages awscli python3-yaml gcc libc6-dev dkms
+RUN install_packages awscli python3-yaml gcc libc6-dev dkms iw lshw aircrack-ng
+
+# RUN wget -O - https://www.kismetwireless.net/repos/kismet-release.gpg.key | sudo apt-key add -
+# RUN echo 'deb https://www.kismetwireless.net/repos/apt/release/bullseye bullseye main' | sudo tee /etc/apt/sources.list.d/kismet.list
+# RUN sudo apt update
+# RUN sudo apt install kismet
 
 COPY . /usr/src/app
 WORKDIR /usr/src/app
@@ -17,18 +43,18 @@ WORKDIR /usr/src/app
 RUN chmod +x ./build.sh
 RUN chmod +x ./run.sh
 RUN chmod +x ./workarounds.sh
+
 # RUN chmod +x rtl8188eus/dkms-install.sh
-
-ENV VERSION '2.88.4+rev0.prod 2.88.4+rev0.prod'
-
 # RUN ./build.sh list
 
+ARG VERSION="4.4.0"
+RUN curl -Ls "https://github.com/balena-io/wifi-connect/releases/download/v$VERSION/wifi-connect-v$VERSION-linux-%%BALENA_ARCH%%.tar.gz" \
+  | tar -xvz -C  /usr/src/app/
+
+ENV VERSION '2.88.4+rev0.prod'
 RUN BALENA_MACHINE_NAME=raspberrypi4-64 ./build.sh build --device raspberrypi4-64 --os-version "$VERSION" --src rtl8188eus
-
 # RUN BALENA_MACHINE_NAME=raspberrypi4-64 ./build.sh build --device raspberrypi4-64 --os-version "$VERSION" --src example_module
+# RUN BALENA_MACHINE_NAME=%%BALENA_MACHINE_NAME%% ./build.sh build --device %%BALENA_MACHINE_NAME%% --os-version "$VERSION" --src example_module
 
-WORKDIR /usr/src/app/rtl8188eus/
+CMD ["bash", "run.sh"]
 
-# RUN sudo ./dkms-install.sh
-
-CMD ./run.sh

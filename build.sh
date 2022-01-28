@@ -29,17 +29,14 @@ function fatal()
 function usage() {
     cat <<EOUSAGE
 usage: $0 [build|list] [options]
-
 commands:
   list: list available devices and versions.
   build: build kernel module for specified device and OS versions.
-
 build options:
   --device="$device"    Balena machine name.
   --os-version="$os-version"   Space separated list of OS versions.
   --src="$src"     Where to find kernel module source.
   --dest-dir="$dest-dir"     Destination directory, defaults to "output".
-
 EOUSAGE
 }
 
@@ -70,6 +67,7 @@ function get_header_paths()
 			found=1
 		fi
 	done <<< "$list_kernels"
+	# echo "$list_kernels" >> build_log.log
 	[ -n "${found}" ] || fatal "Could not find headers for '$dev_pat' at version '$ver_pat', run $0 list"
 }
 
@@ -101,6 +99,8 @@ function get_and_build()
 
 	filename=$(basename $path)
 	url="$files_url/$path"
+
+	echo "File name: $filename $url" >> build_log.log
 
 	tmp_path=$(mktemp --directory)
 	push $tmp_path
@@ -147,7 +147,10 @@ function get_and_build()
 	# Check if we have fetched the kernel_source tarball
 	if [[ $filename == *"source"* ]]; then
 		# Prepare tools
+		echo "Making source $tmp_path" >> build_log.log
 		make -C "$tmp_path" modules_prepare
+		mkdir -p /usr/src/app/kernel_source/
+		cp -r "$tmp_path"/* /usr/src/app/kernel_source/
 	fi
 
 	pop
@@ -158,7 +161,11 @@ function get_and_build()
 	cp -R "$module_dir"/* "$output_dir"
 
 	push "$output_dir"
+	echo "Making header $tmp_path Pwd $PWD" >> build_log.log
+	rmmod r8188eu
 	make -C "$tmp_path" M="$PWD" modules
+	mkdir -p /usr/src/app/kernel_headers/
+	cp -r "$tmp_path"/* /usr/src/app/kernel_headers/
 	pop
 
 	rm -rf "$tmp_path"
@@ -184,7 +191,7 @@ while true; do
         --) break ;;
         *)
             {
-                echo "error: unknown flag: $flag"
+                echo "error: unknown flag: $flag" >> build_log.log
                 usage
             } >&2
             exit 1
@@ -228,7 +235,7 @@ failedVersions=""
 for version in $versions; do
 	for path in $(get_header_paths "$device" "$version"); do
 
-		echo "Building $path..."
+		echo "Building $path..." >> build_log.log
 
 		get_and_build $path
 	done
@@ -237,4 +244,3 @@ done
 if [[ ! -z "$didFail" ]]; then
 	fatal "Could not find headers for '$device' at version '$failedVersions', run $0 list"
 fi
-
